@@ -14,6 +14,8 @@
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/sys/__assert.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/device_runtime.h>
 #include <zephyr/logging/log.h>
 
 #include "iis3dwb.h"
@@ -337,6 +339,41 @@ static int iis3dwb_init(const struct device *dev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_DEVICE
+int iis3dwb_suspend(const struct device *dev)
+{
+	const struct iis3dwb_config *cfg = dev->config;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+
+	return iis3dwb_xl_data_rate_set(ctx, IIS3DWB_XL_ODR_OFF);
+}
+
+int iis3dwb_resume(const struct device *dev)
+{
+	struct iis3dwb_data *data = dev->data;
+	const struct iis3dwb_config *cfg = dev->config;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+
+	return iis3dwb_xl_data_rate_set(ctx, data->odr);
+}
+
+static int iis3dwb_pm_action(const struct device *dev,
+                             enum pm_device_action action)
+{
+    switch (action) {
+    case PM_DEVICE_ACTION_SUSPEND:
+        LOG_DBG("Suspend");
+        return iis3dwb_suspend(dev);
+    case PM_DEVICE_ACTION_RESUME:
+        LOG_DBG("Resume");
+        return iis3dwb_resume(dev);
+    default:
+        return -ENOTSUP;
+    }
+    return 0;
+}
+#endif /* CONFIG_PM_DEVICE */
+
 #define IIS3DWB_SPI_OPERATION								\
 	(SPI_WORD_SET(8) | SPI_OP_MODE_MASTER | SPI_MODE_CPOL | SPI_MODE_CPHA)
 
@@ -388,7 +425,9 @@ static int iis3dwb_init(const struct device *dev)
 	static const struct iis3dwb_config iis3dwb_config_##inst =				\
 		IIS3DWB_CONFIG(inst);								\
 												\
-	SENSOR_DEVICE_DT_INST_DEFINE(inst, iis3dwb_init, NULL,					\
+    PM_DEVICE_DT_INST_DEFINE(inst, iis3dwb_pm_action);                        \
+												\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst, iis3dwb_init, PM_DEVICE_DT_INST_GET(inst),					\
 			      &iis3dwb_data_##inst, &iis3dwb_config_##inst, POST_KERNEL,	\
 			      CONFIG_SENSOR_INIT_PRIORITY, &iis3dwb_driver_api);		\
 
